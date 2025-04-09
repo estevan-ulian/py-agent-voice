@@ -1,33 +1,33 @@
 from dotenv import load_dotenv
 from pynput import keyboard
+from queue import Queue
+from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
+from langchain.agents.agent_types import AgentType
+from langchain_openai import ChatOpenAI
 import os
 import numpy as np
 import sounddevice as sd
 import whisper
 import wave
 import openai
-from queue import Queue
 import io
 import soundfile as sf
 import threading
-from langchain_experimental.agents.agent_toolkits import create_pandas_dataframe_agent
-from langchain.agents.agent_types import AgentType
-from langchain_openai import ChatOpenAI
 import pandas as pd
 
 
 load_dotenv()
-client = openai.Client()
-
 
 class TalkingLLM():
-    def __init__(self, model="gpt-3.5-turbo-0125", whisper_size="medium"):
+    def __init__(self, model="gpt-3.5-turbo-0125", whisper_size="medium", df_file='df_rent.csv', key_press="<cmd>"):
+        self.dataset = f"datasets/{df_file}"
         self.is_record = False
+        self.key_press = key_press
         self.audio_data = []
         self.samplerate = 44100
         self.channels = 1
         self.dtype = 'int16'
-
+        self.client = openai.Client()
         self.whisper = whisper.load_model(name=whisper_size)
         self.tts_voice = "alloy"
         self.model = model
@@ -45,14 +45,10 @@ class TalkingLLM():
             self.is_record = True
 
     def create_agent(self):
-        agent_prompt_prefix = """
-            Você se chama Elisa e está trabalhando com dataframe pandas no Python. O nome do Dataframe é `df`.
-        """
-        df = pd.read_csv('datasets/df_rent.csv')
+        df = pd.read_csv(self.dataset)
         self.agent = create_pandas_dataframe_agent(
             ChatOpenAI(temperature=0, model=self.model),
             df,
-            prefix=agent_prompt_prefix,
             verbose=True,
             agent_type=AgentType.OPENAI_FUNCTIONS,
         )
@@ -71,7 +67,7 @@ class TalkingLLM():
         result = self.whisper.transcribe("test.wav", fp16=False)
         print("Usuário: ", result["text"])
         response = self.agent.invoke(result['text'])
-        print('Isaac: ', response)
+        print('Agent: ', response['output'])
         self.agent_queue.put(response['output'])
 
     def convert_and_play(self):
@@ -79,12 +75,11 @@ class TalkingLLM():
         while True:
             tts_text = self.agent_queue.get()
             if '.' in tts_text or '?' in tts_text or '!' in tts_text:
-                print(tts_text)
-
-                spoken_response = client.audio.speech.create(model="tts-1",
-                                                             voice=self.tts_voice,
-                                                             response_format="opus",
-                                                             input=tts_text)
+                
+                spoken_response = self.client.audio.speech.create(model="tts-1",
+                                                                  voice=self.tts_voice,
+                                                                  response_format="opus",
+                                                                  input=tts_text)
 
                 buffer = io.BytesIO()
                 for chunk in spoken_response.iter_bytes(chunk_size=4096):
@@ -100,7 +95,7 @@ class TalkingLLM():
     def run(self):
         t1 = threading.Thread(target=self.convert_and_play)
         t1.start()
-        print("Pressione <cmd> para iniciar/parar a gravação.")
+        print(f"Pressione {self.key_press} para iniciar/parar a gravação.")
 
         def callback(indata, frames, time, status):
             if status:
@@ -116,7 +111,7 @@ class TalkingLLM():
                 return lambda k: f(l.canonical(k))
 
             hotkey = keyboard.HotKey(
-                keyboard.HotKey.parse('<cmd>'), on_activate=on_activate
+                keyboard.HotKey.parse(self.key_press), on_activate=on_activate
             )
             with keyboard.Listener(
                 on_press=for_canonical(hotkey.press),
@@ -126,5 +121,10 @@ class TalkingLLM():
 
 
 if __name__ == "__main__":
-    talking_llm = TalkingLLM()
+    talking_llm = TalkingLLM(
+        model="gpt-3.5-turbo-0125",
+        whisper_size="base",
+        key_press="<caps_lock>",
+        df_file='df_rent.csv'
+    )
     talking_llm.run()
