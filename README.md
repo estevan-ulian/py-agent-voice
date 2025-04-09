@@ -22,7 +22,7 @@ pip install -r requirements.txt
 - Acesse o arquivo `app.py`, vá até a linha 124, onde a classe TalkingLLM é instanciada e defina o nome do seu arquivo CSV. Por padrão é utilizado o arquivo `df_rent.csv` como exemplo.
 - Execute o script principal para iniciar a aplicação:
 ```bash
-python main.py
+python app.py
 ```
 - Aguarde a inicialização.
 - Pressione `<caps_lock>` para iniciar a gravação do seu áudio.
